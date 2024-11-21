@@ -1,0 +1,99 @@
+{
+  "dataset": {
+    "dataset_name": "doe_study_nr_clusters2",
+    "experiments": "doe",
+    "min_nr_experiments": 0,
+    "max_nr_experiments": 10,
+    "art_data_method": "gan",
+    "nr_clusters": [2, 20],
+    "nr_dps_per_minute": 6,
+    "nr_dps_smoothing": 50,
+    "substance": "pdp",
+    "normalization_ranges": {
+      "ftir:temperature": [5, 75],
+      "ftir:concentration": [0, 400],
+      "ftir:supersaturation": [0, 5],
+      "fbrm:counts_10": [0, 300],
+      "fbrm:counts_10-50": [0, 300],
+      "fbrm:counts_10-100": [0, 300],
+      "fbrm:counts_50-150": [0, 300],
+      "fbrm:counts_150-300": [0, 300],
+      "fbrm:counts_100-1000": [0, 300],
+      "fbrm:counts_300-1000": [0, 300],
+      "fbrm:counts_1000": [0, 300],
+      "sensor:intensity": [0, 300],
+      "sensor:temperature": [5, 75],
+      "thermostat:temperature_process": [5, 75],
+      "thermostat:temperature_internal": [5, 75],
+      "thermostat:temperature_setpoint": [5, 75],
+      "fe:supersaturation": [0, 5],
+      "fe:nucleation_temperature": [5, 75]
+    }
+  },
+  "features": {
+    "features_history": [
+      "sensor:intensity",
+      "thermostat:temperature_process",
+      "fbrm:counts_10",
+      "fbrm:counts_10-50",
+      "fbrm:counts_50-150",
+      "fbrm:counts_150-300",
+      "ftir:concentration",
+      "ftir:supersaturation"
+    ],
+    "features_prediction": [
+      "fbrm:counts_10",
+      "fbrm:counts_10-50",
+      "fbrm:counts_50-150",
+      "fbrm:counts_150-300"
+    ],
+    "features_controlled": ["thermostat:temperature_setpoint"],
+    "features_hybrid": ["pbe:g_k1", "pbe:g_k2", "pbe:j_k1", "pbe:j_k2"]
+  },
+  "model": {
+    "model_name": "study_nr_clusters2",
+    "model_type": "lstm",
+    "nr_timesteps_history": 10,
+    "nr_timesteps_prediction": 10,
+    "batch_size": 20,
+    "list_units_per_layer": [64],
+    "list_dropout_per_layer": [0],
+    "stateful": false,
+    "kernel_regulizer": "l2",
+    "bias_regulizer": "l2",
+    "dense_activation_function": "relu",
+    "kwargs_hybrid": {
+      "h": 0.1,
+      "l_max": 300,
+      "l_critical": 5.5,
+      "k": 0.1
+    }
+  },
+  "training": {
+    "buffer_size": 500000,
+    "nr_epochs": 50,
+    "steps_per_epoch": 0,
+    "loss_function": "mse",
+    "validation_percentage":  0.2
+  },
+  "optimizer": {
+    "optimizer_name": "Adam",
+    "learning_rate": 0.0001
+  },
+  "evaluation": {
+    "metrics":  ["mse", "mae"]
+  },
+  "paths": {
+    "path_datasets": "datasets",
+    "path_models": "models",
+    "path_trained_models": "trainedModels"
+  },
+  "optuna": {
+    "nr_trials": 30
+  },
+  "influx": {
+    "influx_org": "ictv",
+    "influx_bucket": "CAVE"
+  }
+
+}

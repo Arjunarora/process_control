@@ -1,2 +1,128 @@
-# process_control
-Copy of the repository crystalML
+# Description
+crystalML provides a toolchain for training AI models for prediction process variables in crystallization processes.
+After setup, users can design new models by changing the code (modules in pipline folder) and config.json. They then
+can run the pipeline either locally, or on a remote host running the docker container also provided in this repo.
+
+# Infrastructure
+The pipeline depends on two external servers running MLflow and InfluxDB. If training is done on a remote server,
+a git host is also needed to transfer changes in pipeline code or config.json.
+
+## Git
+Running the pipeline code on a remote server is done by pushing changes to a git provider (e.g. Github, Gitlab, etc.). 
+The remote server running the Docker container will regularly check for new commits and, if one is detected, run the pipeline.
+
+## External MLflow server
+MLflow is a FOSS framework for tracking, evaluating and serving models created by common deep learning and other frameworks
+like tensorflow, spark, etc. More details here: https://github.com/mlflow/mlflow.
+A server running MLflow is used by crystalML to track any pipeline runs.
+
+## External InfluxDB server
+InfluxDB is an open-source timeseries database management system which can be self-hosted. It is used to store experimental data
+which will be retreived by crystalML and used to generate datasets for training.
+
+# Setup
+After changing code / config.json, crystalML can either be run locally, or on a remote server.
+
+## Running crystalML locally
+To use crystalML locally, one can either run main.py, or one of the pipeline steps. main.py will use MLflow to
+determine, if a run with the same parameters as specified in config.json and no relevant code changes have been done 
+compared with previous runs. The environment variables specified below must be provided.
+
+## Running crystalML on a remote server
+Alternatively, changes can also be pushed to the git host. The Docker container on the remote server will automatically
+run main.py and therefore the whole pipeline.
+
+## Tensorflow and Nvidia drivers / CUDA
+To train on GPU, make sure the newest cuda-drivers-XXX package is installed on the host. Also make sure compatible 
+versions of tensorflow, nvidia-driver and cuda are installed by the Dockerfile in the container. The compatibility of 
+tensorflow and CUDA can be checked here: https://www.tensorflow.org/install/source#gpu, between CUDA and Nvidia drivers
+here: https://docs.nvidia.com/deeplearning/cudnn/support-matrix/index.html.
+The host needs to have the nvidia-container-toolkit (https://github.com/NVIDIA/nvidia-docker) installed. Some good instructions
+can be found here: https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html#docker
+The docker-compose equivalent of --gpus all is to set the env var NVIDIA_VISIBLE_DEVICES=all. 
+The runtime "nvidia" as specified by
+nvidia-ctk may be usable by specifying "runtime: nvidia" in the compose file, but it seems to be broken now. The workaround is
+to add "default-runtime": "nvidia" to /etc/docker/daemon.json.
+A stable config is nvidia/cuda:11.4.0-base-ubuntu20.04 with cuda-drivers-470 cuda-libraries-11-4 libcudnn8-dev installed.
+
+### Creating a new docker container
+On the server, do the following steps:
+1. Clone the desired branch of crystalML repo to crystalML/USER/data with desired user and github token. 
+Username and token are important, otherwise new commits can't be pushed and therefore no remote training can be done.
+2. Build Dockerfile base image from cloned repo with 
+<code>docker build crystalML/USER/data -t crystalml_base</code>.
+This also may apply if Dockerfile or entrypoint was changed.
+3. Build Dockerfile from cloned repo with <code>docker build crystalML/USER/data -t crystalml</code>. 
+This also may apply if Dockerfile or entrypoint was changed.
+4. If using docker-compose: Add entry to docker-compose for all necessary env vars etc.
+<pre><code>
+    image: crystalml:latest
+    container_name: crystalml
+    environment:
+      INFLUX_URL: 
+      INFLUX_TOKEN: 
+      MLFLOW_TRACKING_URI: 
+    volumes:
+      - /PATH/TO/DATA/ON/HOST/crystalML/USER/data:/data
+    networks:
+      - mlflow_net
+      - external_net
+</code></pre>
+The networks are just examples, e.g. if run behind a reverse proxy.
+If training is done on a GPU, it must be specified e.g. as in the example.
+When starting the container for the first time, it will automatically install all dependencies.
+To trigger running the pipeline manually, delete the .updated file within the container.
+
+## Environment variables
+As shown above in the docker-compose example, running the pipeline depends on a few environment variables. 
+These must be provided when running a docker container as well as when running locally:
+- INFLUX_URL: Full url of the InfluxDB server, e.g. https://influx.example.com:1234
+- INFLUX_TOKEN: Token generated by InfluxDB with data read acces for specified bucket
+- MLFLOW_TRACKING_URI: Full url of MLflow server, e.g. https://mlflow.example.com:5678
+- MLFLOW_TRACKING_INSECURE_TLS: (Optional) For disabling SLL cert verification e.g. in case of self-signed certificates.
+
+# Using crystalML
+To train different models, mainly the code in pipeline/create_model and pipeline/train should be
+changed, as well as the corresponding parameters in config.json. To run the code on a remote 
+server, just commit and push changes via git. If the pipeline is running, it can be watched
+on the MLflow server. The MLflow server can also be used to serve trained models afterwards.
+
+## config.json
+This file contains parameters to be used within the pipeline. It is also used to determine,
+if a pipeline step has already been run and will therefore be skipped, if main.py is run.
+Some special parameters include:
+- dataset
+  - dataset_name: Changing this value will generate a new dataset if generate_dataset is run
+  - experiments: Specify experiment ids as used in InfluxDB which will be used to generate dataset. 
+Alternatively, specify "all" to train all experiments listed in all_experiments_list.txt, minus those
+listed in faulty_experiments_list.txt
+- model
+  - model_name: Changing this will create a new model and also train a new dataset
+  - featuers_XXX: Specify a list of strings "device:channel" to use these timeseries. Alternatively
+custom feature engineering can be listed as "fe:custom_feature" or fixed values as "fix:value_name=123".
+- paths
+  - path_datasets: For each dataset generate_dataset.py will create a folder within this path, containing subfolders for
+each experiment processed, as well as the experiments.txt file listing all experiment ids used.
+  - path_models: Model configurations for training (model_name.json) and prediction (model_name_prediction.json)
+will be written here by create_model.py. 
+  - path_trained_models: This path will contain saved models after training by train.py
+- influx
+  - influx_org: Organisation as needed by InfluxDB
+  - influx_bucket: Bucket name as needed by InfluxDB
+
+When running the whole pipelin via mian.py, optuna can be used to determine optimal parameters.
+To do so, parameters in config.json can instead of singular values be specified as lists.
+These lists will then be used by optuna to run the pipeline several times and determine optimal values.
+
+# Issues
+## Logging model training with MLflow
+- Logging with mlflow.tensorflow.log_model does not work because it expects some very strange input args
+- Logging by saving model, log_artifact and then register_model does not work, because http com with minio fails (MissingHeaderBodySeperatorDefect)
+- Logging by mlflow.tensorflow.autolog() doesnt work, because register_model would have to be called, and that doesnt work
+- Logging by mlflow.keras.autolog() doesnt work, because register_model would have to be called, and that doesnt work
+- Seems like if one wants to register a model the only way is mlflow.keras.log_model...
+ -Sadly that means there is no online metric tracking via ui - which only works with autolog(), even when a custom callback calls log_metric after every epoch / batch
+
+## MLflow model logging
+- Registering a new model version ignores mlflow experiments -> new versions will be created, even if previous version was trained in different mlflow experiment!
+
